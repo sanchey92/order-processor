@@ -47,8 +47,8 @@ type Kafka struct {
 
 type Postgres struct {
 	DSN             string        `yaml:"dsn"               env:"POSTGRES_DSN"               env-required:"true"`
-	MaxConns        int           `yaml:"max_conns"         env:"POSTGRES_MAX_CONNS"         env-default:"20"`
-	MinConns        int           `yaml:"min_conns"         env:"POSTGRES_MIN_CONNS"         env-default:"5"`
+	MaxConns        int32         `yaml:"max_conns"         env:"POSTGRES_MAX_CONNS"         env-default:"20"`
+	MinConns        int32         `yaml:"min_conns"         env:"POSTGRES_MIN_CONNS"         env-default:"5"`
 	MaxConnLifetime time.Duration `yaml:"max_conn_lifetime" env:"POSTGRES_MAX_CONN_LIFETIME" env-default:"30m"`
 	MaxConnIdleTime time.Duration `yaml:"max_conn_idle_time" env:"POSTGRES_MAX_CONN_IDLE_TIME" env-default:"5m"`
 }
