@@ -1,0 +1,23 @@
+services:
+  order_postgres:
+    image: postgres:17.0-alpine3.20
+    container_name: order_postgres
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${PG_DATABASE}
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    volumes:
+      - postgres_orders_data:/var/lib/postgresql/data
+    ports:
+      - "${PG_PORT}:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DATABASE}" ]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_orders_data:
