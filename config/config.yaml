@@ -1,0 +1,54 @@
+app:
+  name: "${APP_NAME}"
+  log_level: "${APP_LOG_LEVEL}"
+
+http:
+  port: 8080
+  read_timeout: 10s
+  write_timeout: 10s
+  shutdown_timeout: 15s
+
+kafka:
+  brokers: "localhost:29092"
+  consumer_group: "order-processor"
+  command_topic: "order-commands"
+  event_topic: "order-events"
+  dlq_topic: "order-commands.dlq"
+  # Producer
+  acks: "all"
+  linger_ms: 10
+  compression: "lz4"
+  # Consumer
+  session_timeout_ms: 30000
+  max_poll_interval_ms: 300000
+  max_retries: 3
+
+postgres:
+  dsn: "${POSTGRES_DSN}"
+  max_conns: 20
+  min_conns: 5
+  max_conn_lifetime: 30m
+  max_conn_idle_time: 5m
+
+outbox:
+  batch_size: 100
+  poll_interval: 500ms
+
+payment:
+  base_url: "http://localhost:8081"
+  timeout: 3s
+  cb_max_failures: 3
+  cb_reset_timeout: 15s
+  cb_slow_threshold: 2s
+
+warehouse:
+  base_url: "http://localhost:8082"
+  timeout: 5s
+  cb_max_failures: 5
+  cb_reset_timeout: 30s
+  cb_slow_threshold: 4s
+
+telemetry:
+  otel_endpoint: "localhost:4317"
+  sample_rate: 0.1
+  metrics_port: 9090
