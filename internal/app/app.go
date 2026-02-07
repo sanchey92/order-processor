@@ -2,17 +2,27 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/sanchey92/order-processor/internal/config"
 	"github.com/sanchey92/order-processor/internal/storage/pg"
 )
 
 type App struct {
-	logger    *slog.Logger
-	pgStorage *pg.Storage
+	logger     *slog.Logger
+	pgStorage  *pg.Storage
+	httpServer *http.Server
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -43,14 +53,64 @@ func New(cfg *config.Config) (*App, error) {
 
 	logger.Info("postgres connected")
 
+	// HTTP Server initialization
+	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.HTTP.Port),
+		Handler:      r,
+		ReadTimeout:  cfg.HTTP.ReadTimeout,
+		WriteTimeout: cfg.HTTP.WriteTimeout,
+	}
+
+	logger.Info("application initialized")
+
 	return &App{
-		logger:    logger,
-		pgStorage: pgStorage,
+		logger:     logger,
+		pgStorage:  pgStorage,
+		httpServer: srv,
 	}, nil
 }
 
-func (a *App) Run() {
-	fmt.Println("hello from application")
+func (a *App) Run() error {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	g, gCtx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		a.logger.Info("http server starting")
+		if err := a.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("http server: %w", err)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		<-gCtx.Done()
+		a.logger.Info("shutdown signal received")
+		return a.shutdown()
+	})
+
+	return g.Wait()
+}
+
+func (a *App) shutdown() error {
+	a.logger.Info("shutting down")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := a.httpServer.Shutdown(ctx); err != nil {
+		return fmt.Errorf("app shutdown: %w", err)
+	}
+
+	a.pgStorage.Close()
+
+	a.logger.Info("shutdown complete")
+	return nil
 }
 
 func newLogger(level, service string) *slog.Logger {

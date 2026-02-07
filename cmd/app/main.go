@@ -23,5 +23,7 @@ func main() {
 		log.Fatalf("failed to start: %v", err)
 	}
 
-	a.Run()
+	if err = a.Run(); err != nil {
+		log.Fatalf("failed to run application")
+	}
 }
