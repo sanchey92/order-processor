@@ -1,12 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
 	"github.com/joho/godotenv"
 
+	"github.com/sanchey92/order-processor/internal/app"
 	"github.com/sanchey92/order-processor/internal/config"
 )
 
@@ -18,5 +18,10 @@ func main() {
 
 	cfg := config.MustLoad(path)
 
-	fmt.Println(cfg)
+	a, err := app.New(cfg)
+	if err != nil {
+		log.Fatalf("failed to start: %v", err)
+	}
+
+	a.Run()
 }
