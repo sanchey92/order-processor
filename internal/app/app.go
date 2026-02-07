@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sanchey92/order-processor/internal/config"
+	"github.com/sanchey92/order-processor/internal/http/middlewares"
 	"github.com/sanchey92/order-processor/internal/storage/pg"
 )
 
@@ -55,9 +56,8 @@ func New(cfg *config.Config) (*App, error) {
 
 	// HTTP Server initialization
 	r := chi.NewRouter()
+	r.Use(middlewares.Recovery(logger))
 	r.Use(middleware.RequestID)
-
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.HTTP.Port),
