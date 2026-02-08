@@ -16,7 +16,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sanchey92/order-processor/internal/config"
+	"github.com/sanchey92/order-processor/internal/http/handlers"
 	"github.com/sanchey92/order-processor/internal/http/middlewares"
+	"github.com/sanchey92/order-processor/internal/service/order"
 	"github.com/sanchey92/order-processor/internal/storage/pg"
 )
 
@@ -47,17 +49,24 @@ func New(cfg *config.Config) (*App, error) {
 		MaxConnIdleTime: cfg.Postgres.MaxConnIdleTime,
 	}
 
-	pgStorage, err := pg.NewPGStorage(ctx, pgConfig)
+	pgStorage, err := pg.NewPGStorage(ctx, logger, pgConfig)
 	if err != nil {
 		return nil, fmt.Errorf("app creation: %w", err)
 	}
 
 	logger.Info("postgres connected")
 
+	// Order Service initialization
+	orderService := order.NewOrderService(logger, pgStorage)
+
 	// HTTP Server initialization
 	r := chi.NewRouter()
 	r.Use(middlewares.Recovery(logger))
 	r.Use(middleware.RequestID)
+
+	r.Route("/api/v1/orders", func(r chi.Router) {
+		r.Post("/", handlers.Create(orderService))
+	})
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.HTTP.Port),

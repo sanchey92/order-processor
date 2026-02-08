@@ -3,6 +3,7 @@ package pg
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,10 +18,11 @@ type StorageConfig struct {
 }
 
 type Storage struct {
-	pool *pgxpool.Pool
+	logger *slog.Logger
+	pool   *pgxpool.Pool
 }
 
-func NewPGStorage(ctx context.Context, cfg *StorageConfig) (*Storage, error) {
+func NewPGStorage(ctx context.Context, log *slog.Logger, cfg *StorageConfig) (*Storage, error) {
 	pgConfig, err := pgxpool.ParseConfig(cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
@@ -40,7 +42,7 @@ func NewPGStorage(ctx context.Context, cfg *StorageConfig) (*Storage, error) {
 		return nil, fmt.Errorf("postgres ping: %w", err)
 	}
 
-	return &Storage{pool: pool}, nil
+	return &Storage{pool: pool, logger: log}, nil
 }
 
 func (s *Storage) Close() {

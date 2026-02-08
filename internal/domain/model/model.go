@@ -48,6 +48,19 @@ func NewOrder(userID string, items []OrderItem) *Order {
 	}
 }
 
+type OutboxMessage struct {
+	ID          int64             `db:"id"`
+	Topic       string            `db:"topic"`
+	Key         string            `db:"key"`
+	EventType   string            `db:"event_type"`
+	Payload     []byte            `db:"payload"`
+	Headers     map[string]string `db:"headers"`
+	CreatedAt   time.Time         `db:"created_at"`
+	PublishedAt *time.Time        `db:"published_at"`
+	RetryCount  int               `db:"retry_count"`
+	LastError   *string           `db:"last_error"`
+}
+
 type CreateOrderCommand struct {
 	UserID string      `json:"user_id"`
 	Items  []OrderItem `json:"items"`

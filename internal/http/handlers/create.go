@@ -9,7 +9,7 @@ import (
 	"github.com/sanchey92/order-processor/internal/http/lib/api/response"
 )
 
-type OrderService interface {
+type OrderCreator interface {
 	Create(ctx context.Context, cmd *model.CreateOrderCommand) (*model.Order, error)
 }
 
@@ -24,7 +24,7 @@ type createResponse struct {
 	Message string            `json:"message"`
 }
 
-func Create(service OrderService) http.HandlerFunc {
+func Create(service OrderCreator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req createRequest
 
