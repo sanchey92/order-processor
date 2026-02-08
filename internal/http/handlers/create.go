@@ -10,7 +10,7 @@ import (
 )
 
 type OrderService interface {
-	Create(ctx context.Context, cmd *model.CreateOrderCommand) (*model.Order, error)
+	ProduceOrder(ctx context.Context, cmd *model.CreateOrderCommand) (*model.Order, error)
 }
 
 type createRequest struct {
@@ -33,7 +33,7 @@ func Create(service OrderService) http.HandlerFunc {
 			return
 		}
 
-		order, err := service.Create(r.Context(), &model.CreateOrderCommand{
+		order, err := service.ProduceOrder(r.Context(), &model.CreateOrderCommand{
 			UserID: req.UserID,
 			Items:  req.Items,
 		})
