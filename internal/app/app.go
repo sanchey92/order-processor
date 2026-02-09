@@ -20,11 +20,13 @@ import (
 	"github.com/sanchey92/order-processor/internal/http/middlewares"
 	"github.com/sanchey92/order-processor/internal/service/order"
 	"github.com/sanchey92/order-processor/internal/storage/pg"
+	customKafka "github.com/sanchey92/order-processor/pkg/kafka"
 )
 
 type App struct {
 	logger     *slog.Logger
 	pgStorage  *pg.Storage
+	producer   *customKafka.Producer
 	httpServer *http.Server
 }
 
@@ -75,12 +77,24 @@ func New(cfg *config.Config) (*App, error) {
 		WriteTimeout: cfg.HTTP.WriteTimeout,
 	}
 
+	// Kafka producer initialization
+	producer, err := customKafka.NewProducer(&customKafka.ProducerConfig{
+		Brokers:     cfg.Kafka.Brokers,
+		Acks:        cfg.Kafka.Acks,
+		LingerMs:    cfg.Kafka.LingerMs,
+		Compression: cfg.Kafka.Compression,
+	}, logger)
+	if err != nil {
+		return nil, fmt.Errorf("create producer: %w", err)
+	}
+
 	logger.Info("application initialized")
 
 	return &App{
 		logger:     logger,
 		pgStorage:  pgStorage,
 		httpServer: srv,
+		producer:   producer,
 	}, nil
 }
 
