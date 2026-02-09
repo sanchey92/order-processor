@@ -74,8 +74,6 @@ func (p *Producer) Publish(ctx context.Context, topic string, key, val []byte, h
 	}
 }
 
-func (p *Producer) Underlying() *kafka.Producer { return p.p }
-
 func (p *Producer) Close() {
 	remaining := p.p.Flush(10_000)
 	if remaining > 0 {
