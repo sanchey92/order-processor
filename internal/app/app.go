@@ -21,6 +21,7 @@ import (
 	"github.com/sanchey92/order-processor/internal/service/order"
 	"github.com/sanchey92/order-processor/internal/storage/pg"
 	customKafka "github.com/sanchey92/order-processor/pkg/kafka"
+	"github.com/sanchey92/order-processor/pkg/outbox"
 )
 
 type App struct {
@@ -28,6 +29,7 @@ type App struct {
 	pgStorage  *pg.Storage
 	producer   *customKafka.Producer
 	httpServer *http.Server
+	relay      *outbox.Relay
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -88,6 +90,15 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("create producer: %w", err)
 	}
 
+	// Outbox relay initialization
+	relay := outbox.NewRelay(
+		pgStorage,
+		producer,
+		logger,
+		cfg.Outbox.BatchSize,
+		cfg.Outbox.PollInterval,
+	)
+
 	logger.Info("application initialized")
 
 	return &App{
@@ -95,6 +106,7 @@ func New(cfg *config.Config) (*App, error) {
 		pgStorage:  pgStorage,
 		httpServer: srv,
 		producer:   producer,
+		relay:      relay,
 	}, nil
 }
 
@@ -110,6 +122,10 @@ func (a *App) Run() error {
 			return fmt.Errorf("http server: %w", err)
 		}
 		return nil
+	})
+
+	g.Go(func() error {
+		return a.relay.Run(gCtx)
 	})
 
 	g.Go(func() error {
@@ -130,6 +146,7 @@ func (a *App) shutdown() error {
 		return fmt.Errorf("app shutdown: %w", err)
 	}
 
+	a.producer.Close()
 	a.pgStorage.Close()
 
 	a.logger.Info("shutdown complete")
