@@ -18,6 +18,7 @@ import (
 	"github.com/sanchey92/order-processor/internal/config"
 	"github.com/sanchey92/order-processor/internal/http/handlers"
 	"github.com/sanchey92/order-processor/internal/http/middlewares"
+	kafkaHandler "github.com/sanchey92/order-processor/internal/kafka/handler"
 	"github.com/sanchey92/order-processor/internal/service/order"
 	"github.com/sanchey92/order-processor/internal/storage/pg"
 	customKafka "github.com/sanchey92/order-processor/pkg/kafka"
@@ -28,6 +29,7 @@ type App struct {
 	logger     *slog.Logger
 	pgStorage  *pg.Storage
 	producer   *customKafka.Producer
+	consumer   *customKafka.Consumer
 	httpServer *http.Server
 	relay      *outbox.Relay
 }
@@ -99,6 +101,22 @@ func New(cfg *config.Config) (*App, error) {
 		cfg.Outbox.PollInterval,
 	)
 
+	// Kafka consumer and handler initialization
+	rawHandler := kafkaHandler.NewKafkaHandler(orderService, logger)
+
+	handler := kafkaHandler.BuildHandler(rawHandler.Handle, pgStorage, pgStorage, producer, logger)
+
+	consumer, err := customKafka.NewConsumer(&customKafka.ConsumerConfig{
+		Topics:            []string{cfg.Kafka.CommandTopic},
+		Brokers:           cfg.Kafka.Brokers,
+		ConsumerGroup:     cfg.Kafka.ConsumerGroup,
+		OffsetReset:       "earliest",
+		SessionTimeoutMs:  cfg.Kafka.SessionTimeoutMs,
+		MaxPollInterval:   cfg.Kafka.MaxPollInterval,
+		PartitionStrategy: "cooperative-sticky",
+		ChannelBufferSize: 256,
+	}, handler, logger)
+
 	logger.Info("application initialized")
 
 	return &App{
@@ -106,6 +124,7 @@ func New(cfg *config.Config) (*App, error) {
 		pgStorage:  pgStorage,
 		httpServer: srv,
 		producer:   producer,
+		consumer:   consumer,
 		relay:      relay,
 	}, nil
 }
