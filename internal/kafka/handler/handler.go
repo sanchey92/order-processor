@@ -8,6 +8,7 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 
+	"github.com/sanchey92/order-processor/internal/domain/errors"
 	"github.com/sanchey92/order-processor/internal/domain/model"
 )
 
@@ -30,13 +31,11 @@ func NewKafkaHandler(op OrderProcessor, l *slog.Logger) *KafkaHandler {
 func (h *KafkaHandler) Handle(ctx context.Context, msg *kafka.Message) error {
 	var cmd model.CreateOrderCommand
 	if err := json.Unmarshal(msg.Value, &cmd); err != nil {
-		// TODO: add custom error
-		return err
+		return &errors.NonRetriableError{Cause: fmt.Errorf("invalid payload: %w", err)}
 	}
 	orderID := headerValue(msg.Headers, "order-id")
 	if orderID == "" {
-		// TODO: add custom error
-		return fmt.Errorf("bla bla bla")
+		return &errors.NonRetriableError{Cause: fmt.Errorf("missing order-id header")}
 	}
 
 	if err := h.orderProcessor.ProcessCommand(ctx, &cmd, orderID); err != nil {
