@@ -104,7 +104,14 @@ func New(cfg *config.Config) (*App, error) {
 	// Kafka consumer and handler initialization
 	rawHandler := kafkaHandler.NewKafkaHandler(orderService, logger)
 
-	handler := kafkaHandler.BuildHandler(rawHandler.Handle, pgStorage, pgStorage, producer, logger)
+	handler := kafkaHandler.BuildHandler(
+		rawHandler.Handle,
+		pgStorage,
+		pgStorage,
+		producer,
+		cfg.Kafka.DLQTopic,
+		cfg.Kafka.MaxRetries,
+		logger)
 
 	consumer, err := customKafka.NewConsumer(&customKafka.ConsumerConfig{
 		Topics:            []string{cfg.Kafka.CommandTopic},
@@ -116,6 +123,11 @@ func New(cfg *config.Config) (*App, error) {
 		PartitionStrategy: "cooperative-sticky",
 		ChannelBufferSize: 256,
 	}, handler, logger)
+	if err != nil {
+		producer.Close()
+		pgStorage.Close()
+		return nil, fmt.Errorf("create consumer: %w", err)
+	}
 
 	logger.Info("application initialized")
 
@@ -144,6 +156,14 @@ func (a *App) Run() error {
 	})
 
 	g.Go(func() error {
+		a.logger.Info("kafka consumer started")
+		if err := a.consumer.Run(gCtx); err != nil {
+			return fmt.Errorf("consumer run error: %w", err)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
 		return a.relay.Run(gCtx)
 	})
 
@@ -153,7 +173,13 @@ func (a *App) Run() error {
 		return a.shutdown()
 	})
 
-	return g.Wait()
+	err := g.Wait()
+
+	a.producer.Close()
+	a.pgStorage.Close()
+	a.logger.Info("resources released")
+
+	return err
 }
 
 func (a *App) shutdown() error {
@@ -162,13 +188,10 @@ func (a *App) shutdown() error {
 	defer cancel()
 
 	if err := a.httpServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("app shutdown: %w", err)
+		return fmt.Errorf("http shutdown: %w", err)
 	}
 
-	a.producer.Close()
-	a.pgStorage.Close()
-
-	a.logger.Info("shutdown complete")
+	a.logger.Info("http server stopped")
 	return nil
 }
 
