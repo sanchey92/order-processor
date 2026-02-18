@@ -16,7 +16,7 @@ type State int32
 const (
 	Closed   State = 0
 	Open     State = 1
-	HalfOpen State = 3
+	HalfOpen State = 2
 )
 
 func (s State) String() string {
