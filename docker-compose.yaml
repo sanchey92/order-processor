@@ -62,5 +62,17 @@ services:
     ports:
       - "8088:8080"
 
+  payment-mock:
+    image: hashicorp/http-echo
+    command: [ "-text", '{"payment_id":"pay-123","status":"reserved"}' ]
+    ports:
+      - "8081:5678"
+
+  warehouse-mock:
+    image: hashicorp/http-echo
+    command: [ "-text", '{"reservation_id":"res-456"}' ]
+    ports:
+      - "8082:5678"
+
 volumes:
   postgres_orders_data:
