@@ -63,7 +63,7 @@ func New(cfg *config.Config) (*App, error) {
 	logger.Info("postgres connected")
 
 	// Order Service initialization
-	orderService := order.NewOrderService(logger, pgStorage)
+	orderService := order.NewOrderService(logger, pgStorage, pgStorage)
 
 	// HTTP Server initialization
 	r := chi.NewRouter()
@@ -71,6 +71,7 @@ func New(cfg *config.Config) (*App, error) {
 	r.Use(middleware.RequestID)
 
 	r.Route("/api/v1/orders", func(r chi.Router) {
+		r.Get("/{id}", handlers.GetByID(orderService))
 		r.Post("/", handlers.Create(orderService))
 	})
 
