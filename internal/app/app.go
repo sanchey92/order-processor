@@ -6,24 +6,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sanchey92/order-processor/internal/config"
-	"github.com/sanchey92/order-processor/internal/http/client/payment"
-	"github.com/sanchey92/order-processor/internal/http/client/warehouse"
-	"github.com/sanchey92/order-processor/internal/http/handlers"
-	"github.com/sanchey92/order-processor/internal/http/middlewares"
-	kafkaHandler "github.com/sanchey92/order-processor/internal/kafka/handler"
 	"github.com/sanchey92/order-processor/internal/service/order"
 	"github.com/sanchey92/order-processor/internal/storage/pg"
-	"github.com/sanchey92/order-processor/pkg/breaker"
 	customKafka "github.com/sanchey92/order-processor/pkg/kafka"
 	"github.com/sanchey92/order-processor/pkg/outbox"
 )
@@ -42,112 +33,37 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("config required")
 	}
 
-	ctx := context.Background()
-
-	// Logger initialisation
 	logger := newLogger(cfg.App.LogLevel, cfg.App.Name)
 	slog.SetDefault(logger)
 	logger.Info("initialising", slog.String("service", cfg.App.Name))
 
-	// PgStorage initialisation
-	pgConfig := &pg.StorageConfig{
-		DSN:             cfg.Postgres.DSN,
-		MaxConns:        cfg.Postgres.MaxConns,
-		MinConns:        cfg.Postgres.MinConns,
-		MaxConnLife:     cfg.Postgres.MaxConnLifetime,
-		MaxConnIdleTime: cfg.Postgres.MaxConnIdleTime,
-	}
-
-	pgStorage, err := pg.NewPGStorage(ctx, logger, pgConfig)
+	pgStorage, err := initStorage(context.Background(), logger, cfg.Postgres)
 	if err != nil {
 		return nil, fmt.Errorf("app creation: %w", err)
 	}
 
-	logger.Info("postgres connected")
+	paymentClient, warehouseClient := initClients(cfg, logger)
 
-	// Mock services initialization
-	paymentCB := breaker.New(&breaker.Config{
-		Name: "payment", MaxFailures: cfg.Payment.CBMaxFailures,
-		ResetTimeout: cfg.Payment.CBResetTimeout, SlowCallThreshold: cfg.Payment.CBSlowThreshold,
-		IsFailure: payment.IsServerFailure,
-	}, logger)
-
-	warehouseCB := breaker.New(&breaker.Config{
-		Name: "warehouse", MaxFailures: cfg.Warehouse.CBMaxFailures,
-		ResetTimeout: cfg.Warehouse.CBResetTimeout, SlowCallThreshold: cfg.Warehouse.CBSlowThreshold,
-		IsFailure: warehouse.IsServerFailure,
-	}, logger)
-
-	paymentClient := payment.New(cfg.Payment.BaseURL, cfg.Payment.Timeout, paymentCB)
-	warehouseClient := warehouse.New(cfg.Warehouse.BaseURL, cfg.Warehouse.Timeout, warehouseCB)
-
-	// Order Service initialization
-	orderService := order.NewOrderService(logger, pgStorage, pgStorage, pgStorage, warehouseClient,
-		paymentClient, cfg.Kafka.EventTopic)
-
-	// HTTP Server initialization
-	r := chi.NewRouter()
-	r.Use(middlewares.Recovery(logger))
-	r.Use(middleware.RequestID)
-
-	r.Route("/api/v1/orders", func(r chi.Router) {
-		r.Get("/{id}", handlers.GetByID(orderService))
-		r.Post("/", handlers.Create(orderService))
-	})
-
-	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.HTTP.Port),
-		Handler:      r,
-		ReadTimeout:  cfg.HTTP.ReadTimeout,
-		WriteTimeout: cfg.HTTP.WriteTimeout,
-	}
-
-	// Kafka producer initialization
-	producer, err := customKafka.NewProducer(&customKafka.ProducerConfig{
-		Brokers:     cfg.Kafka.Brokers,
-		Acks:        cfg.Kafka.Acks,
-		LingerMs:    cfg.Kafka.LingerMs,
-		Compression: cfg.Kafka.Compression,
-	}, logger)
-	if err != nil {
-		return nil, fmt.Errorf("create producer: %w", err)
-	}
-
-	// Outbox relay initialization
-	relay := outbox.NewRelay(
-		pgStorage,
-		producer,
-		logger,
-		cfg.Outbox.BatchSize,
-		cfg.Outbox.PollInterval,
+	orderService := order.NewOrderService(
+		logger, pgStorage, pgStorage, pgStorage,
+		warehouseClient, paymentClient, cfg.Kafka.EventTopic,
 	)
 
-	// Kafka consumer and handler initialization
-	rawHandler := kafkaHandler.NewKafkaHandler(orderService, logger)
+	srv := initHTTPServer(cfg.HTTP, orderService, logger)
 
-	handler := kafkaHandler.BuildHandler(
-		rawHandler.Handle,
-		pgStorage,
-		pgStorage,
-		producer,
-		cfg.Kafka.DLQTopic,
-		cfg.Kafka.MaxRetries,
-		logger)
+	producer, err := initProducer(cfg.Kafka, logger)
+	if err != nil {
+		pgStorage.Close()
+		return nil, fmt.Errorf("app creation: %w", err)
+	}
 
-	consumer, err := customKafka.NewConsumer(&customKafka.ConsumerConfig{
-		Topics:            []string{cfg.Kafka.CommandTopic},
-		Brokers:           cfg.Kafka.Brokers,
-		ConsumerGroup:     cfg.Kafka.ConsumerGroup,
-		OffsetReset:       "earliest",
-		SessionTimeoutMs:  cfg.Kafka.SessionTimeoutMs,
-		MaxPollInterval:   cfg.Kafka.MaxPollInterval,
-		PartitionStrategy: "cooperative-sticky",
-		ChannelBufferSize: 256,
-	}, handler, logger)
+	relay := initRelay(cfg.Outbox, pgStorage, producer, logger)
+
+	consumer, err := initConsumer(cfg.Kafka, pgStorage, producer, orderService, logger)
 	if err != nil {
 		producer.Close()
 		pgStorage.Close()
-		return nil, fmt.Errorf("create consumer: %w", err)
+		return nil, fmt.Errorf("app creation: %w", err)
 	}
 
 	logger.Info("application initialized")
@@ -214,22 +130,4 @@ func (a *App) shutdown() error {
 
 	a.logger.Info("http server stopped")
 	return nil
-}
-
-func newLogger(level, service string) *slog.Logger {
-	var lvl slog.Level
-	switch level {
-	case "info":
-		lvl = slog.LevelInfo
-	case "debug":
-		lvl = slog.LevelDebug
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl})).
-		With(slog.String("service", service))
 }
