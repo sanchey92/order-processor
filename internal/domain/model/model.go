@@ -65,3 +65,25 @@ type CreateOrderCommand struct {
 	UserID string      `json:"user_id"`
 	Items  []OrderItem `json:"items"`
 }
+
+type OrderCreatedEvent struct {
+	OrderID   string      `json:"order_id"`
+	UserID    string      `json:"user_id"`
+	Amount    int64       `json:"amount"`
+	Items     []OrderItem `json:"items"`
+	CreatedAt time.Time   `json:"created_at"`
+}
+
+type OrderConfirmedEvent struct {
+	OrderID       string    `json:"order_id"`
+	PaymentID     string    `json:"payment_id"`
+	ReservationID string    `json:"reservation_id"`
+	ConfirmedAt   time.Time `json:"confirmed_at"`
+}
+
+type OrderCancelledEvent struct {
+	OrderID     string    `json:"order_id"`
+	Reason      string    `json:"reason"`
+	FailedStep  string    `json:"failed_step"`
+	CancelledAt time.Time `json:"cancelled_at"`
+}
