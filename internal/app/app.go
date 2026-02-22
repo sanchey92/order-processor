@@ -16,11 +16,14 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sanchey92/order-processor/internal/config"
+	"github.com/sanchey92/order-processor/internal/http/client/payment"
+	"github.com/sanchey92/order-processor/internal/http/client/warehouse"
 	"github.com/sanchey92/order-processor/internal/http/handlers"
 	"github.com/sanchey92/order-processor/internal/http/middlewares"
 	kafkaHandler "github.com/sanchey92/order-processor/internal/kafka/handler"
 	"github.com/sanchey92/order-processor/internal/service/order"
 	"github.com/sanchey92/order-processor/internal/storage/pg"
+	"github.com/sanchey92/order-processor/pkg/breaker"
 	customKafka "github.com/sanchey92/order-processor/pkg/kafka"
 	"github.com/sanchey92/order-processor/pkg/outbox"
 )
@@ -62,8 +65,24 @@ func New(cfg *config.Config) (*App, error) {
 
 	logger.Info("postgres connected")
 
+	// Mock services initialization
+	paymentCB := breaker.New(&breaker.Config{
+		Name: "payment", MaxFailures: cfg.Payment.CBMaxFailures,
+		ResetTimeout: cfg.Payment.CBResetTimeout, SlowCallThreshold: cfg.Payment.CBSlowThreshold,
+		IsFailure: payment.IsServerFailure,
+	}, logger)
+
+	warehouseCB := breaker.New(&breaker.Config{
+		Name: "warehouse", MaxFailures: cfg.Warehouse.CBMaxFailures,
+		ResetTimeout: cfg.Warehouse.CBResetTimeout, SlowCallThreshold: cfg.Warehouse.CBSlowThreshold,
+		IsFailure: warehouse.IsServerFailure,
+	}, logger)
+
+	paymentClient := payment.New(cfg.Payment.BaseURL, cfg.Payment.Timeout, paymentCB)
+	warehouseClient := warehouse.New(cfg.Warehouse.BaseURL, cfg.Warehouse.Timeout, warehouseCB)
+
 	// Order Service initialization
-	orderService := order.NewOrderService(logger, pgStorage, pgStorage)
+	orderService := order.NewOrderService(logger, pgStorage, pgStorage, warehouseClient, paymentClient)
 
 	// HTTP Server initialization
 	r := chi.NewRouter()

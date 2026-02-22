@@ -5,6 +5,8 @@ import (
 	"log/slog"
 
 	"github.com/sanchey92/order-processor/internal/domain/model"
+	"github.com/sanchey92/order-processor/internal/http/client/payment"
+	"github.com/sanchey92/order-processor/internal/http/client/warehouse"
 )
 
 type Saver interface {
@@ -16,15 +18,19 @@ type Getter interface {
 }
 
 type Service struct {
-	logger *slog.Logger
-	saver  Saver
-	getter Getter
+	paymentClient   *payment.Client
+	warehouseClient *warehouse.Client
+	logger          *slog.Logger
+	saver           Saver
+	getter          Getter
 }
 
-func NewOrderService(l *slog.Logger, saver Saver, getter Getter) *Service {
+func NewOrderService(l *slog.Logger, saver Saver, getter Getter, wc *warehouse.Client, pc *payment.Client) *Service {
 	return &Service{
-		logger: l,
-		saver:  saver,
-		getter: getter,
+		warehouseClient: wc,
+		paymentClient:   pc,
+		logger:          l,
+		saver:           saver,
+		getter:          getter,
 	}
 }
