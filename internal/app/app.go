@@ -82,7 +82,8 @@ func New(cfg *config.Config) (*App, error) {
 	warehouseClient := warehouse.New(cfg.Warehouse.BaseURL, cfg.Warehouse.Timeout, warehouseCB)
 
 	// Order Service initialization
-	orderService := order.NewOrderService(logger, pgStorage, pgStorage, warehouseClient, paymentClient)
+	orderService := order.NewOrderService(logger, pgStorage, pgStorage, pgStorage, warehouseClient,
+		paymentClient, cfg.Kafka.EventTopic)
 
 	// HTTP Server initialization
 	r := chi.NewRouter()
